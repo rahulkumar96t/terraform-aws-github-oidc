@@ -1,0 +1,100 @@
+# Sample workflow for the multi-environment example. Copy it to
+# .github/workflows/deploy.yml in my-org/my-app.
+#
+# Setup on GitHub:
+#   - environments "dev", "qa" and "production", each with a variable
+#     AWS_ROLE_ARN set to the matching role_arns output of the example;
+#   - "production" protected with required reviewers and a deployment branch
+#     rule that only allows main;
+#   - the repository's OIDC sub template set to ["repo", "context", "ref"].
+#
+# No AWS keys are stored anywhere: each job exchanges its OIDC token for a
+# one-hour session of the role its environment points at.
+
+name: deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Nothing gets id-token: write unless a job asks for it.
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  AWS_REGION: eu-central-1
+
+jobs:
+  dev:
+    runs-on: ubuntu-latest
+    environment: dev
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assume the dev deploy role
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: my-app-dev-${{ github.run_id }}
+
+      - name: Deploy
+        run: ./scripts/deploy.sh dev
+
+  qa:
+    needs: dev
+    # The trust policy only accepts refs/heads/main for qa; skipping other refs
+    # here gives a clear "skipped" instead of an AccessDenied from STS.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: qa
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assume the qa deploy role
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: my-app-qa-${{ github.run_id }}
+
+      - name: Deploy
+        run: ./scripts/deploy.sh qa
+
+  production:
+    needs: qa
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    # The sub claim of this job is
+    #   repo:my-org/my-app:environment:production:ref:refs/heads/main
+    # which is the only subject the prod role accepts.
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Assume the prod deploy role
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: my-app-prod-${{ github.run_id }}
+
+      - name: Show the assumed identity
+        run: aws sts get-caller-identity
+
+      - name: Deploy
+        run: ./scripts/deploy.sh production

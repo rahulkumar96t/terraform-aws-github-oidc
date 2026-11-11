@@ -1,0 +1,25 @@
+# Terraform working directories and state
+.terraform/
+*.tfstate
+*.tfstate.*
+*.tfplan
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# Local variable files may hold account-specific values
+*.tfvars
+*.tfvars.json
+
+# Editors and OS
+.idea/
+.vscode/
+.DS_Store
+
+# actionlint downloaded by the CI script when run locally
+/actionlint
